@@ -73,7 +73,18 @@ const B2=f=>{const k=f.mk>0?f.ci:-1;return{sp:k==2?1.5:k==6?1.6:k==7?1.4:k==5?.9
 const uOK=f=>timer<=2400&&!f.us&&!f.ko,ready=f=>uOK(f)&&!f.atk&&!f.stun;
 function inp(i){const k=keys;return i?{l:k.ArrowLeft,r:k.ArrowRight,q:k.ArrowUp,e:k.ArrowDown,p:k.KeyK,k:k.KeyL,s:k.Semicolon,x:k.KeyO||(k.KeyK&&k.KeyL)}:{l:k.KeyA,r:k.KeyD,q:k.KeyW,e:k.KeyS,p:k.KeyF,k:k.KeyG,s:k.KeyH,x:k.KeyR||(k.KeyF&&k.KeyG)}}
 const dec=m=>({l:m&1,r:m&2,u:m&4,d:m&8,p:m&16,k:m&32,s:m&64,x:m&128,q:m&256,e:m&512});
-function sendK(){const c=inp(0),m=(c.l?1:0)|(c.r?2:0)|(c.u?4:0)|(c.d?8:0)|(c.p?16:0)|(c.k?32:0)|(c.s?64:0)|(c.x?128:0)|(c.q?256:0)|(c.e?512:0);if(m!==lk){lk=m;nr&&nr.presence({k:m})}}
+const GS={gf:-1,hist:[],ks:0,rk:0,sx:0,sz:0,tx:null,tz:null,ox:null,oz:null};
+function sendK(){const c=inp(0),m=(c.l?1:0)|(c.r?2:0)|(c.u?4:0)|(c.d?8:0)|(c.p?16:0)|(c.k?32:0)|(c.s?64:0)|(c.x?128:0)|(c.q?256:0)|(c.e?512:0);GS.ks++;if(nr&&(nr.p2p||m!==lk)){lk=m;nr.presence({k:m,ks:GS.ks})}}
+/* 들어온 쪽: 내 캐릭터 이동은 바로 예측해서 보여주고, 상대는 부드럽게 보정 */
+function gstep(){const o=opp(),pr=o&&o.presence;sendK();
+ if(pr&&pr.g&&pr.gf!==GS.gf){GS.gf=pr.gf;applyG(pr.g);GS.sx=F[1].x;GS.sz=F[1].z;const ak=pr.gk|0;GS.hist=GS.hist.filter(h=>h.s>ak);
+  GS.tx=F[0].x;GS.tz=F[0].z;if(GS.ox==null||Math.abs(GS.tx-GS.ox)>120||Math.abs(GS.tz-GS.oz)>120){GS.ox=GS.tx;GS.oz=GS.tz}}
+ else P.forEach(p=>{if(p.ty!=4&&p.ty!=8&&p.ty!=11&&p.ty!=14&&p.ty!=16)p.x+=p.vx});
+ if(F.length!=2)return;const me=F[1];
+ if(nr&&nr.p2p){if(st=='fight'){const c=inp(0),free=!me.atk&&!me.ko&&me.y>=G;let dx=0,dz=0;
+   if(free){dx=((c.r?1:0)-(c.l?1:0))*me.ch.sp*B2(me).sp*(me.sl>0?.5:1);dz=((c.e?1:0)-(c.q?1:0))*4.5}GS.hist.push({s:GS.ks,dx,dz});if(GS.hist.length>90)GS.hist.shift()}
+  let ax=0,az=0;GS.hist.forEach(h=>{ax+=h.dx;az+=h.dz});me.x=Math.max(XL,Math.min(XR,GS.sx+ax));me.z=Math.max(-230,Math.min(230,GS.sz+az))}
+ if(GS.tx!=null){GS.ox+=(GS.tx-GS.ox)*.5;GS.oz+=(GS.tz-GS.oz)*.5;F[0].x=GS.ox;F[0].z=GS.oz}}
 let ai={t:0,c:{}};
 function aiInp(f,o){if(--ai.t<=0){ai.t=8+Math.random()*10|0;const d=Math.abs(o.x-f.x),tw=o.x>f.x,c={},r=Math.random();
  if(P.some(p=>p.o===o&&p.ty!=4&&p.ty!=8&&p.ty!=11&&p.ty!=14&&Math.abs(p.x-f.x)<280&&Math.abs((p.z||0)-f.z)<35)&&r<.55)c[r<.27?'q':'e']=1;
@@ -164,13 +175,13 @@ function selU(){const m=mode==3?(host?0:1):0;
  else if(rdy[0]&&(mode==1||rdy[1]))begin()}
 function update(){
  if(shake>0)shake-=.5;fr++;
- if(mode==3&&host&&['intro','fight','ko','end'].includes(st)&&(tick++&1))nr.presence({g:enc()});
+ if(mode==3&&host&&['intro','fight','ko','end'].includes(st)&&(nr.p2p||(tick++&1)))nr.presence({g:enc(),gf:fr,gk:GS.rk|0});
  if(st=='select')return selU();
  if(st=='title'||st=='lobby'||st=='end')return;
- if(mode==3&&!host){const o=opp();if(o&&o.presence.g)applyG(o.presence.g);sendK();return}
+ if(mode==3&&!host){gstep();return}
  if(st=='intro'){mt++;if(mt>110)st='fight'}
  if(st=='ko'){mt++;if(mt>170){if(wins[0]>=2||wins[1]>=2)st='end';else{round++;reset(F[0].ci,F[1].ci)}}}
- const live=st=='fight',o=mode==3?opp():null,c0=live?inp(0):{},c1=live?(mode==1?aiInp(F[1],F[0]):mode==3?dec(o?o.presence.k|0:0):inp(1)):{};
+ const live=st=='fight',o=mode==3?opp():null,c0=live?inp(0):{},c1=live?(mode==1?aiInp(F[1],F[0]):mode==3?dec(o?o.presence.k|0:0):inp(1)):{};if(mode==3&&o)GS.rk=o.presence.ks|0;
  step(F[0],F[1],c0);step(F[1],F[0],c1);
  P=P.filter(p=>{const o=p.o===F[0]?F[1]:F[0];
   if(p.ty==4||p.ty==8||p.ty==11){if(st=='ko'||--p.life<=0)return 0;const dx=o.x-p.x,rg=p.ty==11?56:48;p.vx=Math.sign(dx)||1;p.z=(p.z||0)+Math.max(-1.5,Math.min(1.5,o.z-(p.z||0)));
@@ -192,14 +203,15 @@ const pk=(m,d)=>{sel[m]=(sel[m]+d+CH.length)%CH.length;rdy[m]=0;sync(m)},rd=m=>{
 /* Claude 밖(일반 웹사이트)에서는 PeerJS(WebRTC P2P)로 방 코드 대전 */
 function loadPeer(){return new Promise((ok,no)=>{if(window.Peer)return ok();const s=document.createElement('script');s.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
 async function p2pJoin(code,create){await loadPeer();
- return new Promise((ok,no)=>{const id='hanilfighter-'+code,me={},rp={kind:'viewer',sameTab:false,presence:{}},cbs=[];let conn=null,peer,done=0,last=0,hb=0;
+ return new Promise((ok,no)=>{const id='hanilfighter-'+code,me={},rp={kind:'viewer',sameTab:false,presence:{}},cbs=[];let conn=null,peer,done=0,last=0,hb=0,rs=0;
   const fire=()=>cbs.forEach(c=>{try{c()}catch(e){}}),
-   api={presence(o){Object.assign(me,o);if(conn&&conn.open)try{conn.send(o)}catch(e){}},peers(){return conn&&conn.open?[rp]:[]},onPeers(cb){cbs.push(cb)},leave(){clearInterval(hb);try{conn&&conn.close()}catch(e){}try{peer.destroy()}catch(e){}}},
+   tx=()=>{if(!(conn&&conn.open))return;me._s=(me._s||0)+1;try{if(window.__lag){const d=JSON.parse(JSON.stringify(me)),c=conn;setTimeout(()=>{try{c.open&&c.send(d)}catch(e){}},window.__lag)}else conn.send(me)}catch(e){}},
+   api={p2p:1,presence(o){Object.assign(me,o);tx()},peers(){return conn&&conn.open?[rp]:[]},onPeers(cb){cbs.push(cb)},leave(){clearInterval(hb);try{conn&&conn.close()}catch(e){}try{peer.destroy()}catch(e){}}},
    drop=c=>{if(conn===c){conn=null;rp.presence={};fire()}},
-   wire=c=>{conn=c;last=Date.now();c.on('open',()=>{last=Date.now();try{c.send(me)}catch(e){}fire()});c.on('data',d=>{last=Date.now();if(d&&typeof d=='object'&&!d.hb){Object.assign(rp.presence,d);fire()}});c.on('close',()=>drop(c));c.on('error',()=>drop(c))},
+   wire=c=>{conn=c;rs=0;last=Date.now();c.on('open',()=>{last=Date.now();tx();fire()});c.on('data',d=>{last=Date.now();if(d&&typeof d=='object'&&!d.hb){if(d._s!=null){if(d._s<=rs)return;rs=d._s}Object.assign(rp.presence,d);fire()}});c.on('close',()=>drop(c));c.on('error',()=>drop(c))},
    fin=(f,v)=>{if(!done){done=1;f(v)}};
   peer=new Peer(create?id:undefined);hb=setInterval(()=>{if(conn&&conn.open){try{conn.send({hb:1})}catch(e){}if(Date.now()-last>5000){const c=conn;try{c.close()}catch(e){}drop(c)}}},1000);
-  peer.on('open',()=>{if(create)fin(ok,api);else{wire(peer.connect(id,{reliable:true}));fin(ok,api)}});
+  peer.on('open',()=>{if(create)fin(ok,api);else{wire(peer.connect(id,{reliable:false}));fin(ok,api)}});
   if(create)peer.on('connection',c=>{if(conn&&conn.open){c.close();return}wire(c)});
   peer.on('error',e=>{if(done){if(e&&e.type=='peer-unavailable'&&st=='lobby'){api.leave();nr=null;lm('방을 찾을 수 없어요. 코드를 확인해 주세요.')}}else fin(no,e)})})}
 async function go(create){
@@ -207,7 +219,7 @@ async function go(create){
  const code=create?Math.random().toString(36).slice(2,6):$('code').value.trim().toLowerCase();
  if(!/^[a-z0-9]{3,12}$/.test(code)){lm('방 코드는 영문·숫자 3자 이상이에요.');return}
  if(!rm)lm('연결하는 중…');try{nr=rm?await rm.join('hf-'+code):await p2pJoin(code,create)}catch(e){lm(rm?'입장에 실패했어요. 다시 시도해 주세요.':(e&&e.type=='unavailable-id'?'이미 있는 방 코드예요. 다시 만들어 주세요.':'연결에 실패했어요. 인터넷을 확인하고 다시 시도해 주세요.'));return}
- host=create;lk=-1;nr.presence({role:create?'h':'g',ch:0,rd:0,k:0,g:null});nr.onPeers(onP);
+ host=create;lk=-1;Object.assign(GS,{gf:-1,hist:[],ks:0,rk:0,tx:null,tz:null,ox:null,oz:null});nr.presence({role:create?'h':'g',ch:0,rd:0,k:0,g:null});nr.onPeers(onP);
  lm(create?'방 코드: '+code+' · 친구가 입장하길 기다리는 중…':'방을 찾는 중…');
  if(!create)setTimeout(()=>{if(st=='lobby'&&nr){nr.leave();nr=null;lm('방을 찾을 수 없어요. 코드를 확인해 주세요.')}},rm?5000:10000)}
 function onP(){
