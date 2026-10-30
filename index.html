@@ -47,21 +47,29 @@ canvas{width:100%;height:auto;border:3px solid #2e2347;border-radius:4px;display
 <script>
 const XL=-140,XR=1040,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),W=900,H=500,G=410;
 /* ---- 랭킹 (Firebase Realtime Database REST) ---- */
-let RANK_DB='',rkres=null;
+let RANK_DB='',RANK_SB={url:'',key:''},rkres=null;
+const rankOn=()=>!!(RANK_SB.url&&RANK_SB.key)||!!RANK_DB,
+ sbh=x=>Object.assign({apikey:RANK_SB.key},RANK_SB.key.startsWith('eyJ')?{Authorization:'Bearer '+RANK_SB.key}:{},x||{}),
+ SBO=()=>!!(RANK_SB.url&&RANK_SB.key);
 const nkey=n=>n.trim().toLowerCase().replace(/[.#$\[\]\/]/g,'_'),myNick=()=>{try{return localStorage.getItem('hf-nick')||''}catch(e){return ''}},
  esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function rget(n){const r=await fetch(RANK_DB+'/rank/'+encodeURIComponent(nkey(n))+'.json');const d=await r.json();return d&&d.nm?d:{nm:n.trim(),elo:1000,w:0,l:0,d:0,ch:{}}}
-async function rput(n,v){await fetch(RANK_DB+'/rank/'+encodeURIComponent(nkey(n))+'.json',{method:'PUT',body:JSON.stringify(v)})}
+async function rget(n){let d;if(SBO()){const r=await fetch(RANK_SB.url+'/rest/v1/rank?select=*&k=eq.'+encodeURIComponent(nkey(n)),{headers:sbh()});if(!r.ok)throw 0;d=(await r.json())[0]}
+ else{const r=await fetch(RANK_DB+'/rank/'+encodeURIComponent(nkey(n))+'.json');d=await r.json()}
+ return d&&d.nm?d:{nm:n.trim(),elo:1000,w:0,l:0,d:0,ch:{}}}
+async function rall(){if(SBO()){const r=await fetch(RANK_SB.url+'/rest/v1/rank?select=*&order=elo.desc&limit=200',{headers:sbh()});if(!r.ok)throw 0;return await r.json()}
+ return Object.values(await(await fetch(RANK_DB+'/rank.json')).json()||{})}
+async function rput(n,v){if(SBO()){const r=await fetch(RANK_SB.url+'/rest/v1/rank?on_conflict=k',{method:'POST',headers:sbh({'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'}),body:JSON.stringify({k:nkey(n),nm:v.nm,elo:v.elo,w:v.w,l:v.l,d:v.d||0,ch:v.ch||{},t:v.t})});if(!r.ok)throw 0}
+ else await fetch(RANK_DB+'/rank/'+encodeURIComponent(nkey(n))+'.json',{method:'PUT',body:JSON.stringify(v)})}
 async function rankSubmit(a,b,w){const ra=await rget(a[0]),rb=await rget(b[0]),ea=1/(1+10**((rb.elo-ra.elo)/400)),sa=w==0?1:w==1?0:.5,
   ka=(ra.w+ra.l+ra.d)<10?40:24,kb=(rb.w+rb.l+rb.d)<10?40:24,da=Math.round(ka*(sa-ea)),db=Math.round(kb*((1-sa)-(1-ea)));
  ra.elo+=da;rb.elo+=db;if(w==0){ra.w++;rb.l++}else if(w==1){ra.l++;rb.w++}else{ra.d=(ra.d||0)+1;rb.d=(rb.d||0)+1}
  ra.nm=a[0].trim();rb.nm=b[0].trim();ra.ch=ra.ch||{};rb.ch=rb.ch||{};ra.ch[a[1]]=(ra.ch[a[1]]||0)+1;rb.ch[b[1]]=(rb.ch[b[1]]||0)+1;ra.t=rb.t=Date.now();
  await rput(a[0],ra);await rput(b[0],rb);return{n:[ra.nm,rb.nm],d:[da,db],e:[ra.elo,rb.elo]}}
-function matchEnd(){if(mode!=3||!host||!RANK_DB)return;const o=opp(),on=o&&o.presence.nm,mn=myNick();if(!on||!mn||nkey(on)==nkey(mn))return;
+function matchEnd(){if(mode!=3||!host||!rankOn())return;const o=opp(),on=o&&o.presence.nm,mn=myNick();if(!on||!mn||nkey(on)==nkey(mn))return;
  const w=wins[0]>wins[1]?0:wins[1]>wins[0]?1:-1;rankSubmit([mn,F[0].ci],[on,F[1].ci],w).then(r=>{rkres=r;if(nr)nr.presence({rr:r})}).catch(()=>{})}
 async function openRank(){st='rank';$('rank').hidden=false;const L=$('rlist');
- if(!RANK_DB){L.textContent='랭킹 서버가 아직 연결되지 않았어요.';return}L.textContent='불러오는 중…';
- try{const d=await(await fetch(RANK_DB+'/rank.json')).json()||{},me=nkey(myNick()),a=Object.values(d).filter(x=>x&&x.nm).sort((x,y)=>y.elo-x.elo||y.w-x.w);
+ if(!rankOn()){L.textContent='랭킹 서버가 아직 연결되지 않았어요.';return}L.textContent='불러오는 중…';
+ try{const me=nkey(myNick()),a=(await rall()).filter(x=>x&&x.nm).sort((x,y)=>y.elo-x.elo||y.w-x.w);
   if(!a.length){L.textContent='아직 기록이 없어요. 온라인 대전을 해보세요!';return}
   L.innerHTML='<table><tr><th>순위</th><th>닉네임</th><th class="n">점수</th><th class="n">승-패</th><th class="n">승률</th><th>주캐릭터</th></tr>'+a.map((x,i)=>{const g=x.w+x.l+(x.d||0),ch=Object.entries(x.ch||{}).sort((p,q)=>q[1]-p[1])[0],
    md=['🥇','🥈','🥉'][i]||(i+1);return'<tr'+(nkey(x.nm)==me?' class="me"':'')+'><td>'+md+'</td><td>'+esc(x.nm)+(g<5?' <small style="color:var(--dim)">(배치)</small>':'')+'</td><td class="n">'+x.elo+'</td><td class="n">'+x.w+'-'+x.l+'</td><td class="n">'+(g?Math.round(100*x.w/g):0)+'%</td><td>'+(ch&&CH[ch[0]]?CH[ch[0]].n:'-')+'</td></tr>'}).join('')+'</table>'}
