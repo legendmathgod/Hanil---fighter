@@ -47,7 +47,7 @@ canvas{width:100%;height:auto;border:3px solid #2e2347;border-radius:4px;display
 <script>
 const XL=-140,XR=1040,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),W=900,H=500,G=410;
 /* ---- 랭킹 (Firebase Realtime Database REST) ---- */
-let RANK_DB='',RANK_SB={url:'',key:''},rkres=null;
+let RANK_DB='',RANK_SB={url:'https://ndwsfleakengdhqjbslm.supabase.co',key:'sb_publishable_Hs7LgUViTbP3L_z3zzwjrQ_GMel9wdw'},rkres=null;
 const rankOn=()=>!!(RANK_SB.url&&RANK_SB.key)||!!RANK_DB,
  sbh=x=>Object.assign({apikey:RANK_SB.key},RANK_SB.key.startsWith('eyJ')?{Authorization:'Bearer '+RANK_SB.key}:{},x||{}),
  SBO=()=>!!(RANK_SB.url&&RANK_SB.key);
