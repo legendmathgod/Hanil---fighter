@@ -11,9 +11,11 @@ body{display:flex;flex-direction:column;align-items:center;padding:12px}
 canvas{width:100%;height:auto;border:3px solid #2e2347;border-radius:4px;display:block;cursor:pointer;touch-action:manipulation}
 #c{position:relative}
 #g{position:absolute;left:3px;top:3px;width:100%;height:calc(100% - 6px);border:0;pointer-events:none;visibility:hidden}
-#lobby{position:absolute;inset:0;margin:auto;width:min(420px,92%);height:fit-content;background:#120d1cf2;border:2px solid #4a3a6b;border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:10px;text-align:center}
-#lobby[hidden]{display:none}
-#lobby button,#lobby input{font:inherit;font-size:16px;padding:10px;border-radius:8px;border:2px solid #4a3a6b;background:#2e2347;color:var(--fg)}
+#lobby,#rank{position:absolute;inset:0;margin:auto;width:min(420px,92%);height:fit-content;background:#120d1cf2;border:2px solid #4a3a6b;border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:10px;text-align:center}
+#lobby[hidden],#rank[hidden]{display:none}
+#rlist{max-height:300px;overflow:auto;text-align:left;font-size:14px}
+#rlist table{width:100%;border-collapse:collapse}#rlist th{color:var(--dim);font-weight:500;padding:4px;border-bottom:1px solid #4a3a6b;position:sticky;top:0;background:#120d1c}#rlist td{padding:5px 4px;border-bottom:1px solid #2e2347}#rlist td.n{text-align:right;font-variant-numeric:tabular-nums}#rlist tr.me td{color:#ffe27a}
+#lobby button,#lobby input,#rank button{font:inherit;font-size:16px;padding:10px;border-radius:8px;border:2px solid #4a3a6b;background:#2e2347;color:var(--fg)}
 #lobby input{text-align:center}
 #lmsg{margin:0;min-height:1.5em;color:#ffd9a0;font-size:14px}
 .k{max-width:900px;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-top:12px;font-size:14px;line-height:1.6;color:var(--dim)}
@@ -27,9 +29,11 @@ canvas{width:100%;height:auto;border:3px solid #2e2347;border-radius:4px;display
 </style></head><body>
 <div id="w"><canvas id="g"></canvas><canvas id="c" width="900" height="500" tabindex="0"></canvas>
 <div id="lobby" hidden><b>온라인 대전 (방 코드)</b>
+<input id="nick" maxlength="10" placeholder="내 닉네임 (랭킹에 표시돼요)" autocomplete="off">
 <button id="mk">방 만들기</button>
 <input id="code" maxlength="12" placeholder="친구의 방 코드" autocomplete="off" autocapitalize="off">
-<button id="jn">방 입장</button><p id="lmsg"></p><button id="bk">뒤로</button></div></div>
+<button id="jn">방 입장</button><p id="lmsg"></p><button id="bk">뒤로</button></div>
+<div id="rank" hidden><b>🏆 PvP 랭킹</b><div id="rlist">불러오는 중…</div><button id="rbk">닫기</button></div></div>
 <div class="pad">
 <div><span></span><button data-k="KeyW">↑</button><span></span><button data-k="KeyA">←</button><button data-k="KeyS">↓</button><button data-k="KeyD">→</button></div>
 <div><button data-k="KeyF">펀치</button><button data-k="KeyG">킥</button><button data-k="KeyH">필살기</button><button data-k="KeyR">궁극기</button></div>
@@ -37,11 +41,31 @@ canvas{width:100%;height:auto;border:3px solid #2e2347;border-radius:4px;display
 <div class="k">
 <div><b>1P · 온라인 방장</b><br>이동 W A S D<br>펀치 F · 킥 G · 필살기 H<br>궁극기: 펀치+킥 동시에</div>
 <div><b>2P (같은 기기 대전)</b><br>이동 방향키<br>펀치 K · 킥 L · 필살기 ;<br>궁극기: 펀치+킥 동시에</div>
-<div style="grid-column:1/-1">위·아래로 움직이면 화면 안쪽·바깥쪽으로 비켜서서 장풍과 공격을 피할 수 있어요. 뒤로 걸으면 가드! 먼저 2라운드를 따내면 승리! 라운드 시작 20초 뒤부터 궁극기를 쓸 수 있어요 (캐릭터가 반짝여요). (Esc: 타이틀로)</div>
+<div style="grid-column:1/-1">온라인 대전 결과는 랭킹(Elo 점수)에 반영돼요. 센 상대를 이길수록 점수가 많이 올라요. 위·아래로 움직이면 화면 안쪽·바깥쪽으로 비켜서서 장풍과 공격을 피할 수 있어요. 뒤로 걸으면 가드! 먼저 2라운드를 따내면 승리! 라운드 시작 20초 뒤부터 궁극기를 쓸 수 있어요 (캐릭터가 반짝여요). (Esc: 타이틀로)</div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 const XL=-140,XR=1040,$=id=>document.getElementById(id),cv=$('c'),ctx=cv.getContext('2d'),W=900,H=500,G=410;
+/* ---- 랭킹 (Firebase Realtime Database REST) ---- */
+let RANK_DB='',rkres=null;
+const nkey=n=>n.trim().toLowerCase().replace(/[.#$\[\]\/]/g,'_'),myNick=()=>{try{return localStorage.getItem('hf-nick')||''}catch(e){return ''}},
+ esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function rget(n){const r=await fetch(RANK_DB+'/rank/'+encodeURIComponent(nkey(n))+'.json');const d=await r.json();return d&&d.nm?d:{nm:n.trim(),elo:1000,w:0,l:0,d:0,ch:{}}}
+async function rput(n,v){await fetch(RANK_DB+'/rank/'+encodeURIComponent(nkey(n))+'.json',{method:'PUT',body:JSON.stringify(v)})}
+async function rankSubmit(a,b,w){const ra=await rget(a[0]),rb=await rget(b[0]),ea=1/(1+10**((rb.elo-ra.elo)/400)),sa=w==0?1:w==1?0:.5,
+  ka=(ra.w+ra.l+ra.d)<10?40:24,kb=(rb.w+rb.l+rb.d)<10?40:24,da=Math.round(ka*(sa-ea)),db=Math.round(kb*((1-sa)-(1-ea)));
+ ra.elo+=da;rb.elo+=db;if(w==0){ra.w++;rb.l++}else if(w==1){ra.l++;rb.w++}else{ra.d=(ra.d||0)+1;rb.d=(rb.d||0)+1}
+ ra.nm=a[0].trim();rb.nm=b[0].trim();ra.ch=ra.ch||{};rb.ch=rb.ch||{};ra.ch[a[1]]=(ra.ch[a[1]]||0)+1;rb.ch[b[1]]=(rb.ch[b[1]]||0)+1;ra.t=rb.t=Date.now();
+ await rput(a[0],ra);await rput(b[0],rb);return{n:[ra.nm,rb.nm],d:[da,db],e:[ra.elo,rb.elo]}}
+function matchEnd(){if(mode!=3||!host||!RANK_DB)return;const o=opp(),on=o&&o.presence.nm,mn=myNick();if(!on||!mn||nkey(on)==nkey(mn))return;
+ const w=wins[0]>wins[1]?0:wins[1]>wins[0]?1:-1;rankSubmit([mn,F[0].ci],[on,F[1].ci],w).then(r=>{rkres=r;if(nr)nr.presence({rr:r})}).catch(()=>{})}
+async function openRank(){st='rank';$('rank').hidden=false;const L=$('rlist');
+ if(!RANK_DB){L.textContent='랭킹 서버가 아직 연결되지 않았어요.';return}L.textContent='불러오는 중…';
+ try{const d=await(await fetch(RANK_DB+'/rank.json')).json()||{},me=nkey(myNick()),a=Object.values(d).filter(x=>x&&x.nm).sort((x,y)=>y.elo-x.elo||y.w-x.w);
+  if(!a.length){L.textContent='아직 기록이 없어요. 온라인 대전을 해보세요!';return}
+  L.innerHTML='<table><tr><th>순위</th><th>닉네임</th><th class="n">점수</th><th class="n">승-패</th><th class="n">승률</th><th>주캐릭터</th></tr>'+a.map((x,i)=>{const g=x.w+x.l+(x.d||0),ch=Object.entries(x.ch||{}).sort((p,q)=>q[1]-p[1])[0],
+   md=['🥇','🥈','🥉'][i]||(i+1);return'<tr'+(nkey(x.nm)==me?' class="me"':'')+'><td>'+md+'</td><td>'+esc(x.nm)+(g<5?' <small style="color:var(--dim)">(배치)</small>':'')+'</td><td class="n">'+x.elo+'</td><td class="n">'+x.w+'-'+x.l+'</td><td class="n">'+(g?Math.round(100*x.w/g):0)+'%</td><td>'+(ch&&CH[ch[0]]?CH[ch[0]].n:'-')+'</td></tr>'}).join('')+'</table>'}
+ catch(e){L.textContent='랭킹을 불러오지 못했어요. 인터넷을 확인해 주세요.'}}
 let st='title',mode=0,round=1,wins=[0,0],timer=0,msg='',mt=0,win=-1,shake=0,F=[],P=[],ac,sel=[0,0],rdy=[0,0],nr=null,host=0,tick=0,fr=0,lk=-1,notice='';
 const S=['title','select','intro','fight','ko','end'];
 const CH=[
@@ -65,7 +89,7 @@ const keys={};
 function snd(f){try{ac=ac||new AudioContext();const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=f;g.gain.value=.05;o.connect(g);g.connect(ac.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.12);o.stop(ac.currentTime+.12)}catch(e){}}
 const mk=(x,ci)=>{const ch=CH[ci];return{ci,ch,n:ch.n,c:ch.c,b:ch.b,x,y:G,vx:0,vy:0,face:1,hp:ch.hp,mhp:ch.hp,atk:0,t:0,hit:0,stun:0,cd:0,crouch:0,block:0,ko:0,flash:0,us:0,mk:0,sl:0,z:0,mr:0}};
 function reset(a,b){F=[mk(250,a),mk(650,b)];P=[];timer=3600;st='intro';mt=0}
-function begin(){round=1;wins=[0,0];if(mode==1)sel[1]=Math.random()*CH.length|0;reset(sel[0],sel[1])}
+function begin(){round=1;wins=[0,0];rkres=null;if(mode==3&&host&&nr)nr.presence({rr:null});if(mode==1)sel[1]=Math.random()*CH.length|0;reset(sel[0],sel[1])}
 const DUR={1:20,2:28,3:34,5:30},UD=[30,50,44,64,44,40,40,44,40,50,44,70,50,40,40,200],UT=['목발 검술!','똥 폭격!','원숭이 변신!','좋니~ 발사!','애기 소환!','거대화!','소인화!','펭귄 변신!','탱크 탑승!','슬라이딩 태클!','난 사실 짭이야!','가을아 돌아와!','방귀 뿡!!!','강철 거인 변신!','날려차기!','못 참겠다!'],
  UL=['10초간 펀치가 목발 검술로','똥 3발, 맞으면 느려짐','10초간 원숭이로 변신','"좋니~" 3발 발사','애기 2명 소환','10초간 거대화','10초간 소인화','10초간 펭귄으로 변신','10초간 탱크, 장풍이 미사일로','맞으면 2.5초간 못 움직여요','분신 2명이 함께 싸워요','눈물 레이저 (옆으로 피하기)','방귀 가스로 지속 피해·둔화','10초간 거인: 느리지만 한 방에 KO','세게 차서 멀리 날려보내요','화장실에서 체력 회복 (그동안 무적)'],BASE=[1,1,1,1,1,1.12,.8,1,1,1,1,1,.95,1,1,1];
 function Z(f){let r=f.mk>0?Math.min(1,f.mk/15):0;if(f.atk==4&&f.t<22)r=Math.max(r,f.t/22);return BASE[f.ci]*(f.ci==5?1+.6*r:f.ci==6?1-.4*r:f.ci==13?1+.75*r:1)}
@@ -76,7 +100,7 @@ const dec=m=>({l:m&1,r:m&2,u:m&4,d:m&8,p:m&16,k:m&32,s:m&64,x:m&128,q:m&256,e:m&
 const GS={gf:-1,hist:[],ks:0,rk:0,sx:0,sz:0,tx:null,tz:null,ox:null,oz:null};
 function sendK(){const c=inp(0),m=(c.l?1:0)|(c.r?2:0)|(c.u?4:0)|(c.d?8:0)|(c.p?16:0)|(c.k?32:0)|(c.s?64:0)|(c.x?128:0)|(c.q?256:0)|(c.e?512:0);GS.ks++;if(nr&&(nr.p2p||m!==lk)){lk=m;nr.presence({k:m,ks:GS.ks})}}
 /* 들어온 쪽: 내 캐릭터 이동은 바로 예측해서 보여주고, 상대는 부드럽게 보정 */
-function gstep(){const o=opp(),pr=o&&o.presence;sendK();
+function gstep(){const o=opp(),pr=o&&o.presence;sendK();if(pr)rkres=pr.rr||null;
  if(pr&&pr.g&&pr.gf!==GS.gf){GS.gf=pr.gf;applyG(pr.g);GS.sx=F[1].x;GS.sz=F[1].z;const ak=pr.gk|0;GS.hist=GS.hist.filter(h=>h.s>ak);
   GS.tx=F[0].x;GS.tz=F[0].z;if(GS.ox==null||Math.abs(GS.tx-GS.ox)>120||Math.abs(GS.tz-GS.oz)>120){GS.ox=GS.tx;GS.oz=GS.tz}}
  else P.forEach(p=>{if(p.ty!=4&&p.ty!=8&&p.ty!=11&&p.ty!=14&&p.ty!=16)p.x+=p.vx});
@@ -177,10 +201,11 @@ function update(){
  if(shake>0)shake-=.5;fr++;
  if(mode==3&&host&&['intro','fight','ko','end'].includes(st)&&(nr.p2p||(tick++&1)))nr.presence({g:enc(),gf:fr,gk:GS.rk|0});
  if(st=='select')return selU();
- if(st=='title'||st=='lobby'||st=='end')return;
+ if(mode==3&&!host&&st=='end'){const o=opp();if(o&&o.presence.rr)rkres=o.presence.rr}
+ if(st=='title'||st=='lobby'||st=='rank'||st=='end')return;
  if(mode==3&&!host){gstep();return}
  if(st=='intro'){mt++;if(mt>110)st='fight'}
- if(st=='ko'){mt++;if(mt>170){if(wins[0]>=2||wins[1]>=2)st='end';else{round++;reset(F[0].ci,F[1].ci)}}}
+ if(st=='ko'){mt++;if(mt>170){if(wins[0]>=2||wins[1]>=2){st='end';matchEnd()}else{round++;reset(F[0].ci,F[1].ci)}}}
  const live=st=='fight',o=mode==3?opp():null,c0=live?inp(0):{},c1=live?(mode==1?aiInp(F[1],F[0]):mode==3?dec(o?o.presence.k|0:0):inp(1)):{};if(mode==3&&o)GS.rk=o.presence.ks|0;
  step(F[0],F[1],c0);step(F[1],F[0],c1);
  P=P.filter(p=>{const o=p.o===F[0]?F[1]:F[0];
@@ -196,9 +221,9 @@ function update(){
 }
 /* ---- 메뉴 / 온라인 ---- */
 const lm=s=>$('lmsg').textContent=s;
-function toTitle(m){if(nr){nr.leave();nr=null}st='title';mode=0;F=[];P=[];notice=m;lk=-1;$('lobby').hidden=true}
+function toTitle(m){if(nr){nr.leave();nr=null}st='title';mode=0;F=[];P=[];notice=m;lk=-1;$('lobby').hidden=true;$('rank').hidden=true}
 function start(m){mode=m;st='select';sel=[0,0];rdy=[0,0];notice=''}
-function openLobby(){mode=3;st='lobby';lm('');$('lobby').hidden=false}
+function openLobby(){mode=3;st='lobby';lm('');$('lobby').hidden=false;if(!$('nick').value)$('nick').value=myNick()}
 const pk=(m,d)=>{sel[m]=(sel[m]+d+CH.length)%CH.length;rdy[m]=0;sync(m)},rd=m=>{rdy[m]=1;sync(m)},sync=m=>{if(mode==3&&nr)nr.presence({ch:sel[m],rd:rdy[m]})};
 /* Claude 밖(일반 웹사이트)에서는 PeerJS(WebRTC P2P)로 방 코드 대전 */
 function loadPeer(){return new Promise((ok,no)=>{if(window.Peer)return ok();const s=document.createElement('script');s.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
@@ -216,16 +241,17 @@ async function p2pJoin(code,create){await loadPeer();
   peer.on('error',e=>{if(done){if(e&&e.type=='peer-unavailable'&&st=='lobby'){api.leave();nr=null;lm('방을 찾을 수 없어요. 코드를 확인해 주세요.')}}else fin(no,e)})})}
 async function go(create){
  if(nr)return;let rm=null;try{rm=await claude.use('room')}catch(e){}
+ const nm=$('nick').value.trim();if(!nm){lm('닉네임을 먼저 입력해 주세요.');return}try{localStorage.setItem('hf-nick',nm)}catch(e){}
  const code=create?Math.random().toString(36).slice(2,6):$('code').value.trim().toLowerCase();
  if(!/^[a-z0-9]{3,12}$/.test(code)){lm('방 코드는 영문·숫자 3자 이상이에요.');return}
  if(!rm)lm('연결하는 중…');try{nr=rm?await rm.join('hf-'+code):await p2pJoin(code,create)}catch(e){lm(rm?'입장에 실패했어요. 다시 시도해 주세요.':(e&&e.type=='unavailable-id'?'이미 있는 방 코드예요. 다시 만들어 주세요.':'연결에 실패했어요. 인터넷을 확인하고 다시 시도해 주세요.'));return}
- host=create;lk=-1;Object.assign(GS,{gf:-1,hist:[],ks:0,rk:0,tx:null,tz:null,ox:null,oz:null});nr.presence({role:create?'h':'g',ch:0,rd:0,k:0,g:null});nr.onPeers(onP);
+ host=create;lk=-1;Object.assign(GS,{gf:-1,hist:[],ks:0,rk:0,tx:null,tz:null,ox:null,oz:null});nr.presence({role:create?'h':'g',ch:0,rd:0,k:0,g:null,nm,rr:null});nr.onPeers(onP);
  lm(create?'방 코드: '+code+' · 친구가 입장하길 기다리는 중…':'방을 찾는 중…');
  if(!create)setTimeout(()=>{if(st=='lobby'&&nr){nr.leave();nr=null;lm('방을 찾을 수 없어요. 코드를 확인해 주세요.')}},rm?5000:10000)}
 function onP(){
  if(st=='lobby'){const o=opp();if(o&&o.presence.role==(host?'g':'h')){$('lobby').hidden=true;sel=[0,0];rdy=[0,0];st='select'}}
  else if(mode==3&&st!='title'&&!opp())toTitle('상대가 나갔어요.')}
-$('mk').onclick=()=>go(1);$('jn').onclick=()=>go(0);$('bk').onclick=()=>toTitle('');
+$('rbk').onclick=()=>toTitle('');$('mk').onclick=()=>go(1);$('jn').onclick=()=>go(0);$('bk').onclick=()=>toTitle('');
 /* ---- 입력 ---- */
 addEventListener('keydown',e=>{if(e.target.tagName=='INPUT')return;
  const c=e.code;keys[c]=1;if(/^(Space|Arrow)/.test(c))e.preventDefault();
@@ -235,11 +261,11 @@ addEventListener('keydown',e=>{if(e.target.tagName=='INPUT')return;
   if(c=='KeyD'||(mode!=2&&c=='ArrowRight'))pk(m,1);
   if(c=='KeyF'||c=='Enter'||(mode!=2&&c=='Space'))rd(m);
   if(mode==2){if(c=='ArrowLeft')pk(1,-1);if(c=='ArrowRight')pk(1,1);if(c=='KeyK')rd(1)}}
- else if(st=='title'){if(c=='Digit1'||c=='Enter')start(1);if(c=='Digit2')start(2);if(c=='Digit3')openLobby()}
+ else if(st=='title'){if(c=='Digit1'||c=='Enter')start(1);if(c=='Digit2')start(2);if(c=='Digit3')openLobby();if(c=='Digit4')openRank()}
  else if(st=='end'&&c=='Enter')toTitle('')});
 addEventListener('keyup',e=>{if(e.target.tagName!='INPUT')keys[e.code]=0});
 cv.addEventListener('pointerdown',e=>{cv.focus();const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)*W/r.width,y=(e.clientY-r.top)*H/r.height;
- if(st=='title'){y<362?start(1):y<407?start(2):openLobby()}
+ if(st=='title'){y<345?start(1):y<385?start(2):y<425?openLobby():openRank()}
  else if(st=='select'){const m=mode==3?(host?0:1):0;
   if(y>425)rd(m);else if(y>92&&y<304){const cc=Math.floor((x-12)/110),i=(y<198?0:8)+cc;
    if(cc>=0&&cc<8&&i<CH.length){if(sel[m]==i)rd(m);else{sel[m]=i;rdy[m]=0;sync(m)}}}}
@@ -340,10 +366,10 @@ function render(){
  const g3=R3&&F.length&&['intro','fight','ko','end'].includes(st);$('g').style.visibility=g3?'visible':'hidden';
  if(st=='select')return selR();
  if(g3)render3();else bg();
- if(st=='title'||st=='lobby'){
+ if(st=='title'||st=='lobby'||st=='rank'){
   txt('HANIL',450,170,100,'#f2c230',10);txt('FIGHTER',450,245,70,'#fff',8);
-  if(st=='title'){txt('경기 시작 (컴퓨터)',450,345,26,'#fff',5);txt('2인 대전 (같은 기기)',450,390,26,'#fff',5);txt('2인 대전 (방 코드 · 온라인)',450,435,26,'#fff',5);
-   if(notice)txt(notice,450,475,16,'#ff9a8a',3)}
+  if(st=='title'){txt('경기 시작 (컴퓨터)',450,332,24,'#fff',5);txt('2인 대전 (같은 기기)',450,372,24,'#fff',5);txt('2인 대전 (방 코드 · 온라인)',450,412,24,'#fff',5);txt('🏆 랭킹',450,452,24,'#ffe27a',5);
+   if(notice)txt(notice,450,486,16,'#ff9a8a',3)}
   return}
  if(!g3){P.forEach(proj);F.forEach(fighter)}hud();
  F.forEach(f=>{if(f.atk==4&&f.t<46&&!f.ko){ctx.fillStyle='rgba(255,225,120,'+.28*(1-f.t/46)+')';ctx.fillRect(0,0,W,H);txt(f.n+' 궁극기!',450,185,46,'#ffe27a',7);txt(UT[f.ci],450,225,30,'#fff',5)}});
@@ -354,6 +380,7 @@ function render(){
   if(mt>50&&win>=0)txt(F[win].n+' WINS',450,300,48,'#fff',6);if(mt>50&&win<0)txt('DRAW',450,300,48,'#fff',6)}
  if(st=='end'&&win>=0){ctx.fillStyle='#000b';ctx.fillRect(0,0,W,H);
   txt(F[win].n+' 승리!',450,240,90,'#f2c230',8);txt('클릭 또는 Enter · 타이틀로',450,320,26,'#fff',5)}
+ if(st=='end'&&rkres){[0,1].forEach(i=>{const d=rkres.d[i];txt(rkres.n[i]+'  '+rkres.e[i]+'점 ('+(d>=0?'+':'')+d+')',450,380+i*36,24,d>=0?'#7be08a':'#ff9a8a',4)})}
 }
 /* ---- 3D (Three.js): 사람 비율 모델 + 무대 배경 사진 ---- */
 const T=window.THREE;let R3=null;
